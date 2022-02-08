@@ -12,7 +12,7 @@
 
 ## Installation
 
-The easiest way to get started is to just download the latest release which bundles everything you need in a single executable. You can also checkout the source code and run it if you have Python 3.8+ installed and the `pyserial`, `numpy`, and `matplotlib` packages installed.
+The easiest way to get started is to just download the [latest release](https://github.com/cfangmeier/Royce610Reader/releases) which bundles everything you need in a single executable. You can also checkout the source code and run it if you have Python 3.8+ installed and the `pyserial`, `numpy`, and `matplotlib` packages installed.
 
 ## Setup
 
