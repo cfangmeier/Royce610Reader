@@ -1,64 +1,43 @@
 import serial
+import typing as typ
 import tkinter as tk
 from tkinter import ttk
+from matplotlib.figure import Figure
+from matplotlib.axes import Axes
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 MOCK = True
-REPORT = """\
-========================================
-           ROYCE INSTRUMENTS            
-      SYSTEM 610 WIRE-PULL TESTER      
-========================================
-DATE: 02-03-2022 TIME: 07:21:38        
-OPERATOR NAME: OPERATOR    1    
-PART NUMBER  : PART        1    
-----------------------------------------
-    9      DESTRUCT TESTS
-  9.61 gf  MEAN LOAD
-  2.55 gf  STD DEV n-1
-----------------------------------------
-  1.95 gf  MEAN - 3*STD-DEV
-----------------------------------------
- 12.5  gf  MAX LOAD
-  5.3  gf  MIN LOAD
-----------------------------------------
-UNDER PRESET LOAD
-    0 TESTS <   0.1 gf
-OVER PRESET LOAD
-    0 TESTS > 100.0 gf
-----------------------------------------
-Test#  Force (gf) Failure mode    Code  
-----------------------------------------
-    1     0.6   NON-DESTRUCT        0  
-    2     7.8   NO CODE ASSIGNED   13  
-    3     5.3   NO CODE ASSIGNED   13  
-    4     6.8   NO CODE ASSIGNED   13  
-    5    10.7   NO CODE ASSIGNED   13  
-    6    11.0   NO CODE ASSIGNED   13  
-    7    11.7   NO CODE ASSIGNED   13  
-    8    12.0   NO CODE ASSIGNED   13  
-    9    12.5   NO CODE ASSIGNED   13  
-   10     8.7   NO CODE ASSIGNED   13
-"""
 
 
-class MockPort:
+class MockSerial:
 
     def __init__(self):
-        self.lines = REPORT.splitlines()
+        self.mean = 10
+        self.std = 3
+        self.modes = ['NON-DESTRUCT', 'NO CODE ASSIGNED']
+        self.codes = list(range(13))
+        self.idx = 0
 
     def readline(self):
         from time import sleep
-        from random import random
-        sleep(random()*10)
-        return self.lines.pop(0)
+        from random import random, gammavariate, choice
+        sleep(random())
+        line = f"{self.idx: 5d}{gammavariate(self.mean**2/self.std**2, self.mean/self.std**2): 8.1f}"\
+               f"   {choice(self.modes):<16s}{choice(self.codes): 5d}"
+        self.idx += 1
+        print(line)
+        return line
+
+    def close(self):
+        pass
 
 
 class Monitor:
 
-    def __init__(self):
-        self.port_name = ""
-        self.port: serial.Serial = None
-        self.buffer = None
+    def __init__(self, port_name: str, callback: typ.Callable):
+        self.callback = callback
+        self.port_name = port_name
+        self._stop = False
 
     @staticmethod
     def get_ports():
@@ -70,41 +49,142 @@ class Monitor:
         print(f"Available COM ports: {ports}")
         return ports
 
-    def open_port(self, port_name=None):
-        if port_name is not None:
-            self.port_name = port_name
-        if not MOCK:
-            self.port = serial.Serial(self.port_name, 9600)
+    def monitor(self):
+        import re
+        self._stop = False
+        if MOCK:
+            port = MockSerial()
+        else:
+            port = serial.Serial(self.port_name, 9600, timeout=0.1)
+        rex = re.compile(r" +(\d+) +([0-9.]+) +([A-Z- ]+[A-Z]) +(\d+) *")
+        while True:
+            if self._stop:
+                break
+            line = port.readline()
+            if line:
+                match = rex.match(line)
+                if match is None:
+                    continue
+                result = match.groups()
+                self.callback(result)
+        port.close()
+        print("End of Monitor")
 
-    def close_port(self):
-        if not MOCK:
-            if self.port.isOpen():
-                self.port.close()
-
-    def get_report(self):
-        pass
+    def stop(self):
+        self._stop = True
 
 
 class UI:
     def __init__(self):
-        self.monitor = Monitor()
+        self.monitor = None
+        self.monitor_thread = None
+        self.results = []
 
         self.root = tk.Tk()
-        frm = ttk.Frame(self.root, padding=10)
+        self.root.geometry("1000x800")
+        self.root.wm_title("Royce 610 Pull-tester Interface")
+        self.root.grid()
+        left_frame = ttk.Frame(self.root, padding=10)
+        left_frame.grid(column=0, row=0)
 
-        frm.grid()
-        ports = self.monitor.get_ports()
-        clicked = tk.StringVar()
+        left_frame.grid(pady=10)
+
+        table_frame = tk.Frame(left_frame)
+        table_frame.grid(column=0, row=0)
+        table_scroll = ttk.Scrollbar(table_frame, orient=tk.VERTICAL)
+        table_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self.table = ttk.Treeview(table_frame, column=("c1", "c2", "c3", "c4"), show='headings', height=10,
+                                  yscrollcommand=table_scroll.set)
+        self.table.column("# 1", anchor=tk.CENTER)
+        self.table.heading("# 1", text="Bond ID")
+        self.table.column("# 2", anchor=tk.CENTER)
+        self.table.heading("# 2", text="Break Strength")
+        self.table.column("# 3", anchor=tk.CENTER)
+        self.table.heading("# 3", text="Failure Mode")
+        self.table.column("# 4", anchor=tk.CENTER)
+        self.table.heading("# 4", text="Code")
+
+        self.table.pack(side=tk.LEFT, fill=tk.BOTH)
+        table_scroll.config(command=self.table.yview)
+
+        self.fig = Figure(figsize=(8, 5), dpi=100)
+        self.ax: Axes = self.fig.add_subplot(111)
+
+        self.canvas = FigureCanvasTkAgg(self.fig, master=left_frame)
+        self.update_plot()
+        self.canvas.get_tk_widget().grid(column=0, row=2)
+
+        right_frame = ttk.Frame(self.root, padding=10)
+        right_frame.grid(column=1, row=0)
+
+        monitor_frame = ttk.Frame(right_frame)
+        ttk.Label(monitor_frame, text="Select COM Port").pack()
+        ports = Monitor.get_ports()
+        self.clicked = tk.StringVar()
         if ports:
-            clicked.set(ports[0])
-        self.serial_option_menu = ttk.OptionMenu(self.root, clicked, "", *ports)
-        self.serial_option_menu.grid(column=2, row=0)
+            self.clicked.set(ports[0])
+        self.serial_option_menu = ttk.OptionMenu(monitor_frame, self.clicked, "", *ports)
+        self.serial_option_menu.pack()
+        ttk.Button(monitor_frame, text="Connect", command=self.start_monitor).pack(side=tk.BOTTOM)
+        monitor_frame.pack(side=tk.TOP, expand=True)
 
-        ttk.Label(frm, text="Hello World!").grid(column=0, row=0)
-        ttk.Button(frm, text="Quite", command=self.root.destroy).grid(column=1, row=0)
+        ttk.Button(right_frame, text="Quit", command=self.quit).pack(side=tk.BOTTOM)
+        ttk.Button(right_frame, text="Save CSV", command=self.save_csv).pack(side=tk.BOTTOM)
+
+    def start_monitor(self):
+        import threading
+        self.monitor = Monitor(self.clicked.get(), callback=self.add_result)
+        self.monitor_thread = threading.Thread(target=self.monitor.monitor, daemon=True)
+        self.monitor_thread.start()
+        print("Monitor Started")
+
+    def add_result(self, result):
+        self.results.append(result)
+        self.table.insert('', 'end', text="5", values=result)
+        self.table.yview_moveto(1)
+        self.update_plot()
+
+    def update_plot(self):
+        from statistics import mean, stdev
+        self.ax.clear()
+        strengths = [float(res[1]) for res in self.results]
+        self.ax.hist(strengths, bins=range(20))
+        self.ax.set_xlabel('Break Strength (gf)')
+
+        if len(strengths) > 2:
+            text = (
+                f"$\\mu={mean(strengths):.1f}$ \n"
+                f"$\\sigma={stdev(strengths):.1f}$"
+            )
+        else:
+            text = (
+                "$\\mu=\\mathrm{N/A}$ \n"
+                "$\\sigma=\\mathrm{N/A}$"
+            )
+
+        self.ax.text(0.01, 0.99, text, transform=self.fig.transFigure,
+                     horizontalalignment="left", verticalalignment="top",
+                     bbox=dict(facecolor='white', alpha=0.9, linewidth=2.0))
+
+        self.canvas.draw()
+
+    def save_csv(self):
+        from tkinter import filedialog
+
+        filename = filedialog.asksaveasfilename(title="Please specify output filename.", defaultextension="csv",
+                                                filetypes=(('CSV Files', '*.csv'),))
+        if not filename:
+            return
+        print("filename:", filename)
+        with open(filename, 'w') as f:
+            for result in self.results:
+                f.write(f"{result[0]},{result[1]},{result[2]},{result[3]}\n")
 
     def run(self):
         self.root.mainloop()
+
+    def quit(self):
+        self.root.destroy()
 
 
 if __name__ == '__main__':
