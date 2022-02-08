@@ -9,6 +9,11 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 MOCK = False
 
+# Sample lines:
+#  `8,   0.7  ,"NON-DESTRUCT      ", 0`
+#  `9,   0.7  ,"NON-DESTRUCT      ", 0`
+#  `10,   9.7  ,"NO CODE ASSIGNED  ",13`
+
 
 class MockSerial:
 
@@ -23,10 +28,10 @@ class MockSerial:
         from time import sleep
         from random import random, gammavariate, choice
         sleep(random())
+        ## @TODO: Update this to match real output
         line = f"{self.idx: 5d}{gammavariate(self.mean**2/self.std**2, self.mean/self.std**2): 8.1f}"\
                f"   {choice(self.modes):<16s}{choice(self.codes): 5d}"
         self.idx += 1
-        print(line)
         return line
 
     def close(self):
@@ -34,7 +39,7 @@ class MockSerial:
 
 
 class Monitor:
-    REX = re.compile(r" +(\d+) +([0-9.]+) +([A-Z- ]+[A-Z]) +(\d+) *")
+    REX = re.compile(r" *(\d+), *([0-9.]+) *,\"([A-Z- ]+[A-Z]) *\", *(\d+) *")
 
     def __init__(self, port_name: str, callback: typ.Callable):
         self.callback = callback
@@ -47,7 +52,7 @@ class Monitor:
         if MOCK:
             ports = ["COM1", "COM2", "COM3"]
         else:
-            ports = list_ports.comports()
+            ports = [port.name for port in list_ports.comports()]
         print(f"Available COM ports: {ports}")
         return ports
 
@@ -63,8 +68,13 @@ class Monitor:
                 break
             line = port.readline()
             if line:
+                if type(line) is bytes:
+                    line = bytes([byte & 0x7F for byte in line]).decode('ascii')
+                line = line.strip()
+                print(line)
                 match = self.REX.match(line)
                 if match is None:
+                    print("Failed to parse line, proceeding to next")
                     continue
                 result = match.groups()
                 if not self._stop:
