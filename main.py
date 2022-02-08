@@ -1,4 +1,5 @@
 import serial
+import re
 import typing as typ
 import tkinter as tk
 from tkinter import ttk
@@ -6,7 +7,7 @@ from matplotlib.figure import Figure
 from matplotlib.axes import Axes
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
-MOCK = True
+MOCK = False
 
 
 class MockSerial:
@@ -33,6 +34,7 @@ class MockSerial:
 
 
 class Monitor:
+    REX = re.compile(r" +(\d+) +([0-9.]+) +([A-Z- ]+[A-Z]) +(\d+) *")
 
     def __init__(self, port_name: str, callback: typ.Callable):
         self.callback = callback
@@ -50,25 +52,25 @@ class Monitor:
         return ports
 
     def monitor(self):
-        import re
         self._stop = False
         if MOCK:
             port = MockSerial()
         else:
             port = serial.Serial(self.port_name, 9600, timeout=0.1)
-        rex = re.compile(r" +(\d+) +([0-9.]+) +([A-Z- ]+[A-Z]) +(\d+) *")
+        print("Port Monitor Started")
         while True:
             if self._stop:
                 break
             line = port.readline()
             if line:
-                match = rex.match(line)
+                match = self.REX.match(line)
                 if match is None:
                     continue
                 result = match.groups()
-                self.callback(result)
+                if not self._stop:
+                    self.callback(result)
         port.close()
-        print("End of Monitor")
+        print("Port Monitor Stopped")
 
     def stop(self):
         self._stop = True
@@ -134,9 +136,8 @@ class UI:
     def start_monitor(self):
         import threading
         self.monitor = Monitor(self.clicked.get(), callback=self.add_result)
-        self.monitor_thread = threading.Thread(target=self.monitor.monitor, daemon=True)
+        self.monitor_thread = threading.Thread(target=self.monitor.monitor)  # , daemon=True)
         self.monitor_thread.start()
-        print("Monitor Started")
 
     def add_result(self, result):
         self.results.append(result)
@@ -184,10 +185,19 @@ class UI:
         self.root.mainloop()
 
     def quit(self):
+        if self.monitor:
+            self.monitor.stop()
+            self.monitor_thread.join()
         self.root.destroy()
 
 
 if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser('Royce610Reader')
+    parser.add_argument('-m', action="store_true",
+                        help="Mock the serial communication for offline development.")
+    args = parser.parse_args()
+    MOCK = args.m
     ui = UI()
     ui.run()
 
