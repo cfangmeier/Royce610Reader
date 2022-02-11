@@ -86,6 +86,9 @@ class UI:
         self.root = tk.Tk()
         self.root.geometry("780x760")
         self.root.wm_title("Royce 610 Pull-tester Interface")
+
+        self.root.bind("<Escape>", lambda evt: self.quit())
+        self.root.bind("<KeyPress>", self.set_breaktype)
         left_frame = ttk.Frame(self.root, padding=10)
         left_frame.grid(column=0, row=0, sticky=tk.NW)
 
@@ -129,7 +132,8 @@ class UI:
         if ports:
             self.port_select.set(ports[0])
         ttk.OptionMenu(monitor_frame, self.port_select, "", *ports).pack(side=tk.LEFT)
-        ttk.Button(monitor_frame, text="Connect", command=self.start_monitor).pack(side=tk.RIGHT)
+        self.connect_button = ttk.Button(monitor_frame, text="Connect", command=self.start_monitor)
+        self.connect_button.pack(side=tk.RIGHT)
         ttk.Separator(monitor_frame, orient='horizontal').pack(side=tk.BOTTOM, fill='x')
         monitor_frame.pack(side=tk.TOP, expand=True)
 
@@ -164,7 +168,28 @@ class UI:
                 ttk.Label(top, text="Failed to Open Port!").place(x=10, y=10)
                 return
         self.monitor = Monitor(port)
+        self.connect_button["state"] = "disabled"
         self.check_monitor()
+
+    def set_breaktype(self, evt: tk.Event):
+        if not self.results:
+            return
+        last_result = self.results[-1]
+        if evt.keycode == 8:  # backspace
+            self.results[-1] = (last_result[0], last_result[1], "NO CODE ASSIGNED", "13")
+            self.add_result(None)
+        elif evt.keycode in range(48, 58):
+            if last_result[3] == "13" and evt.char != "0":
+                new_code = int(evt.char)
+            else:
+                new_code = int(last_result[3] + evt.char)
+                if new_code <= 0 or new_code > 13:
+                    return
+            new_type = BREAK_TYPES[new_code-1].strip()
+            self.results[-1] = (last_result[0], last_result[1], new_type, str(new_code))
+            self.add_result(None)
+        # last_result_type = self.results[-1][2]
+        # print(evt)
 
     def check_monitor(self):
         if self.monitor:
@@ -173,8 +198,11 @@ class UI:
             self.root.after(100, self.check_monitor)
 
     def add_result(self, result):
-        self.results.append(result)
-        self.table.insert('', 'end', text="5", values=result)
+        if result is not None:
+            self.results.append(result)
+        self.table.delete(*self.table.get_children())
+        for result in self.results:
+            self.table.insert('', 'end', text="5", values=result)
         self.table.yview_moveto(1)
         self.update_plot()
         self.update_counts()
@@ -218,7 +246,6 @@ class UI:
                 self.break_counts[type_]["text"] = str(count)
             except KeyError:
                 print(f"Unknown break type: {type_}")
-
 
     def save_csv(self):
         from tkinter import filedialog
