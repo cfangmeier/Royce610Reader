@@ -4,6 +4,9 @@
 
 `Royce610Reader` is an **unofficial** interface to collect results from Royce 610 wirebond pull-tester. It works by reading data coming over the RS232 interface that connects a Windows PC to the pull-tester.
 
+![image](https://user-images.githubusercontent.com/2569566/153683423-dc509db2-3861-432a-bdf3-3dd737785bb7.png)
+
+
 ## Requirements
 
   - A Windows 10 PC. Other operating systems may work but have not been tested.
