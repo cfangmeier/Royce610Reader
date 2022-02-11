@@ -148,8 +148,8 @@ class UI:
         self.break_counts = {}
         for idx, break_type in enumerate(BREAK_TYPES):
             bt = break_type.strip()
-            ttk.Label(break_type_frame, text=bt).grid(row=idx, column=0, sticky=tk.W)
-            count = ttk.Label(break_type_frame, text="0")
+            ttk.Label(break_type_frame, text=f"({idx+1:2d}) {bt}").grid(row=idx, column=0, sticky=tk.W)
+            count = ttk.Label(break_type_frame, text="    0")
             count.grid(row=idx, column=1, sticky=tk.E)
             self.break_counts[bt] = count
 
@@ -188,8 +188,6 @@ class UI:
             new_type = BREAK_TYPES[new_code-1].strip()
             self.results[-1] = (last_result[0], last_result[1], new_type, str(new_code))
             self.add_result(None)
-        # last_result_type = self.results[-1][2]
-        # print(evt)
 
     def check_monitor(self):
         if self.monitor:
@@ -243,7 +241,7 @@ class UI:
             counts[result[2]] += 1
         for type_, count in counts.items():
             try:
-                self.break_counts[type_]["text"] = str(count)
+                self.break_counts[type_]["text"] = f"{count:5d}"
             except KeyError:
                 print(f"Unknown break type: {type_}")
 
