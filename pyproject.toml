@@ -1,0 +1,9 @@
+[project]
+name = "royce610reader"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = [
+    "matplotlib>=3.10.9",
+    "pyinstaller>=6.20.0",
+    "pyserial>=3.5",
+]
