@@ -83,11 +83,8 @@ class Monitor:
             line = line.strip()
             print(line)
             match = self.REX.match(line)
-            if match is None:
-                print("Failed to parse line, proceeding to next")
-                return None
-            return match.groups()
-        return None
+            return line, (match.groups() if match else None)
+        return None, None
 
 
 class UI:
@@ -171,12 +168,33 @@ class UI:
         btn_bond2 = tk.Button(break_type_frame, text="Bond 2", font=("Arial", 12, "bold"), command=lambda: self.set_bond(2))
         btn_bond2.grid(row=1, column=1, sticky="nsew", padx=2, pady=2)
 
+        self.notebook = ttk.Notebook(right_frame)
+        self.notebook.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+
+        # Plot Tab
+        self.plot_tab = ttk.Frame(self.notebook)
+        self.notebook.add(self.plot_tab, text="Plot")
+
         self.fig = Figure(figsize=(7, 5), dpi=80)
         self.ax: Axes = self.fig.add_subplot(111)
 
-        self.canvas = FigureCanvasTkAgg(self.fig, master=right_frame)
+        self.canvas = FigureCanvasTkAgg(self.fig, master=self.plot_tab)
         self.update_plot()
-        self.canvas.get_tk_widget().pack(side=tk.TOP, fill=tk.BOTH, expand=True)
+        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+        # Serial Monitor Tab
+        self.monitor_tab = ttk.Frame(self.notebook)
+        self.notebook.add(self.monitor_tab, text="Serial Monitor")
+
+        self.serial_text = tk.Text(self.monitor_tab, state=tk.DISABLED, wrap=tk.NONE)
+        serial_scroll_y = ttk.Scrollbar(self.monitor_tab, orient=tk.VERTICAL, command=self.serial_text.yview)
+        serial_scroll_x = ttk.Scrollbar(self.monitor_tab, orient=tk.HORIZONTAL, command=self.serial_text.xview)
+        self.serial_text.configure(yscrollcommand=serial_scroll_y.set, xscrollcommand=serial_scroll_x.set)
+
+        serial_scroll_y.pack(side=tk.RIGHT, fill=tk.Y)
+        serial_scroll_x.pack(side=tk.BOTTOM, fill=tk.X)
+        self.serial_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
         self.bind_shortcuts()
 
         self.status_var = tk.StringVar()
@@ -235,9 +253,18 @@ class UI:
 
     def check_monitor(self):
         if self.monitor:
-            if result := self.monitor.check():
+            raw_line, result = self.monitor.check()
+            if raw_line:
+                self.log_serial(raw_line)
+            if result:
                 self.add_result(result)
             self.root.after(100, self.check_monitor)
+
+    def log_serial(self, line):
+        self.serial_text.config(state=tk.NORMAL)
+        self.serial_text.insert(tk.END, line + "\n")
+        self.serial_text.see(tk.END)
+        self.serial_text.config(state=tk.DISABLED)
 
     def add_result(self, result):
         # result is (id, strength, mode, bond)
